@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>猛健樂紀錄小助手</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; background-color: #f0f4f8; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-4xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-indigo-700">猛健樂 (Mounjaro) 進度追蹤</h1>
+            <p class="text-gray-500 mt-2">記錄你的健康轉變過程</p>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            <!-- 左側：輸入表單 -->
+            <div class="md:col-span-1">
+                <div class="card p-6">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-700">新增紀錄</h2>
+                    <form id="recordForm" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-600">日期</label>
+                            <input type="date" id="date" required class="w-full p-2 border rounded-md focus:ring-2 focus:ring-indigo-400 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-600">體重 (kg)</label>
+                            <input type="number" id="weight" step="0.1" placeholder="例如: 75.5" required class="w-full p-2 border rounded-md focus:ring-2 focus:ring-indigo-400 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-600">體脂 (%)</label>
+                            <input type="number" id="fat" step="0.1" placeholder="例如: 28.2" required class="w-full p-2 border rounded-md focus:ring-2 focus:ring-indigo-400 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-600">目前劑量 (mg)</label>
+                            <select id="dose" class="w-full p-2 border rounded-md focus:ring-2 focus:ring-indigo-400 outline-none">
+                                <option value="2.5">2.5 mg</option>
+                                <option value="5.0">5.0 mg</option>
+                                <option value="7.5">7.5 mg</option>
+                                <option value="10.0">10.0 mg</option>
+                                <option value="12.5">12.5 mg</option>
+                                <option value="15.0">15.0 mg</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700 transition">儲存數據</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 右側：圖表與紀錄 -->
+            <div class="md:col-span-2 space-y-6">
+                <!-- 數據概覽卡片 -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="card p-4 text-center">
+                        <p class="text-sm text-gray-500">累計減重</p>
+                        <p id="totalLoss" class="text-2xl font-bold text-green-500">0 kg</p>
+                    </div>
+                    <div class="card p-4 text-center">
+                        <p class="text-sm text-gray-500">最新體脂</p>
+                        <p id="latestFat" class="text-2xl font-bold text-blue-500">-- %</p>
+                    </div>
+                </div>
+
+                <!-- 圖表 -->
+                <div class="card p-6">
+                    <canvas id="weightChart"></canvas>
+                </div>
+
+                <!-- 歷史表格 -->
+                <div class="card p-6 overflow-x-auto">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-700">歷史紀錄</h2>
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-bottom border-gray-200">
+                                <th class="py-2 text-sm font-semibold text-gray-600">日期</th>
+                                <th class="py-2 text-sm font-semibold text-gray-600">劑量</th>
+                                <th class="py-2 text-sm font-semibold text-gray-600">體重</th>
+                                <th class="py-2 text-sm font-semibold text-gray-600">體脂</th>
+                                <th class="py-2 text-sm font-semibold text-gray-600">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTableBody">
+                            <!-- JS 動態插入 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let records = JSON.parse(localStorage.getItem('mounjaroRecords')) || [];
+        let chart = null;
+
+        const form = document.getElementById('recordForm');
+        const historyTableBody = document.getElementById('historyTableBody');
+        const totalLossEl = document.getElementById('totalLoss');
+        const latestFatEl = document.getElementById('latestFat');
+
+        // 設定預設日期為今天
+        document.getElementById('date').valueAsDate = new Date();
+
+        // 儲存數據
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const record = {
+                id: Date.now(),
+                date: document.getElementById('date').value,
+                weight: parseFloat(document.getElementById('weight').value),
+                fat: parseFloat(document.getElementById('fat').value),
+                dose: document.getElementById('dose').value
+            };
+
+            records.push(record);
+            records.sort((a, b) => new Date(a.date) - new Date(b.date));
+            saveAndRefresh();
+            form.reset();
+            document.getElementById('date').valueAsDate = new Date();
+        });
+
+        function saveAndRefresh() {
+            localStorage.setItem('mounjaroRecords', JSON.stringify(records));
+            renderUI();
+        }
+
+        function deleteRecord(id) {
+            if(confirm('確定要刪除這筆紀錄嗎？')) {
+                records = records.filter(r => r.id !== id);
+                saveAndRefresh();
+            }
+        }
+
+        function renderUI() {
+            // 更新表格
+            historyTableBody.innerHTML = '';
+            records.slice().reverse().forEach(r => {
+                const row = `
+                    <tr class="border-b border-gray-100">
+                        <td class="py-3 text-sm">${r.date}</td>
+                        <td class="py-3 text-sm"><span class="bg-indigo-100 text-indigo-700 px-2 py-1 rounded text-xs">${r.dose} mg</span></td>
+                        <td class="py-3 text-sm font-medium">${r.weight} kg</td>
+                        <td class="py-3 text-sm">${r.fat} %</td>
+                        <td class="py-3 text-sm">
+                            <button onclick="deleteRecord(${r.id})" class="text-red-400 hover:text-red-600 text-xs">刪除</button>
+                        </td>
+                    </tr>
+                `;
+                historyTableBody.innerHTML += row;
+            });
+
+            // 更新數據概覽
+            if (records.length > 0) {
+                const firstWeight = records[0].weight;
+                const lastWeight = records[records.length - 1].weight;
+                const loss = (firstWeight - lastWeight).toFixed(1);
+                totalLossEl.innerText = `${loss} kg`;
+                latestFatEl.innerText = `${records[records.length - 1].fat} %`;
+            }
+
+            updateChart();
+        }
+
+        function updateChart() {
+            const ctx = document.getElementById('weightChart').getContext('2d');
+            
+            const labels = records.map(r => r.date);
+            const weightData = records.map(r => r.weight);
+            const fatData = records.map(r => r.fat);
+
+            if (chart) chart.destroy();
+
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: '體重 (kg)',
+                            data: weightData,
+                            borderColor: '#4f46e5',
+                            backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                            fill: true,
+                            tension: 0.3,
+                            yAxisID: 'y',
+                        },
+                        {
+                            label: '體脂 (%)',
+                            data: fatData,
+                            borderColor: '#10b981',
+                            borderDash: [5, 5],
+                            fill: false,
+                            tension: 0.3,
+                            yAxisID: 'y1',
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        y: { type: 'linear', display: true, position: 'left', title: { display: true, text: '體重 (kg)' } },
+                        y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: '體脂 (%)' } }
+                    }
+                }
+            });
+        }
+
+        // 初始載入
+        renderUI();
+    </script>
+</body>
+</html>
